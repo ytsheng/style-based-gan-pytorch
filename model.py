@@ -279,6 +279,15 @@ class AdaptiveInstanceNorm(nn.Module):
         gamma, beta = style.chunk(2, 1)
 
         out = self.norm(input)
+        sides_size = out.shape[-1]
+        gamma = gamma.repeat(1, 1, sides_size, sides_size)
+        beta = beta.repeat(1, 1, sides_size, sides_size)
+
+        # to add one side to be one style, the other the opposite style
+        half = int(sides_size/2)
+        gamma[:, :, :, half:] *= -1
+        beta[:, :, :, half:] *= -1
+
         out = gamma * out + beta
 
         return out
