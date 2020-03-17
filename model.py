@@ -274,20 +274,29 @@ class AdaptiveInstanceNorm(nn.Module):
         self.style.linear.bias.data[:in_channel] = 1
         self.style.linear.bias.data[in_channel:] = 0
 
-    def forward(self, input, style):
-        style = self.style(style).unsqueeze(2).unsqueeze(3)
-        gamma, beta = style.chunk(2, 1)
-
+    def forward(self, input, styles):
         out = self.norm(input)
-        sides_size = out.shape[-1]
-        gamma = gamma.repeat(1, 1, sides_size, sides_size)
-        beta = beta.repeat(1, 1, sides_size, sides_size)
 
-        # to add one side to be one style, the other the opposite style
-        half = int(sides_size/2)
-        gamma[:, :, :, half:] *= -1
-        beta[:, :, :, half:] *= -1
+        def style_to_gb(style):
+            style = self.style(style).unsqueeze(2).unsqueeze(3)
+            gamma, beta = style.chunk(2, 1)
+            return gamma, beta
+                
+        def styles_to_gb(styles):
+            g1, b1 = style_to_gb(styles[0])
+            g2, b2 = style_to_gb(styles[1])
 
+            def repeat(t):
+                sides_size = out.shape[-1]
+                assert sides_size % 2 == 0
+                # sides_size for height can be 1
+                return t.repeat(1, 1, sides_size, sides_size//2)
+
+            g = torch.cat([repeat(g1), repeat(g2)], dim=-1)
+            b = torch.cat([repeat(b1), repeat(b2)], dim=-1)
+            return g, b
+
+        gamma, beta = styles_to_gb(styles)
         out = gamma * out + beta
 
         return out
@@ -366,16 +375,16 @@ class StyledConvBlock(nn.Module):
         self.adain2 = AdaptiveInstanceNorm(out_channel, style_dim)
         self.lrelu2 = nn.LeakyReLU(0.2)
 
-    def forward(self, input, style, noise):
+    def forward(self, input, styles, noise):
         out = self.conv1(input)
         out = self.noise1(out, noise)
         out = self.lrelu1(out)
-        out = self.adain1(out, style)
+        out = self.adain1(out, styles)
 
         out = self.conv2(out)
         out = self.noise2(out, noise)
         out = self.lrelu2(out)
-        out = self.adain2(out, style)
+        out = self.adain2(out, styles)
 
         return out
 
@@ -414,35 +423,15 @@ class Generator(nn.Module):
 
         # self.blur = Blur()
 
-    def forward(self, style, noise, step=0, alpha=-1, mixing_range=(-1, -1)):
+    # styles here is a tuple of (x, 15, 512) shaped tensor
+    def forward(self, styles, noise, step=0, alpha=-1, mixing_range=(-1, -1)):
         out = noise[0]
-
-        if len(style) < 2:
-            inject_index = [len(self.progression) + 1]
-
-        else:
-            inject_index = random.sample(list(range(step)), len(style) - 1)
-
-        crossover = 0
-
         for i, (conv, to_rgb) in enumerate(zip(self.progression, self.to_rgb)):
-            if mixing_range == (-1, -1):
-                if crossover < len(inject_index) and i > inject_index[crossover]:
-                    crossover = min(crossover + 1, len(style))
-
-                style_step = style[crossover]
-
-            else:
-                if mixing_range[0] <= i <= mixing_range[1]:
-                    style_step = style[1]
-
-                else:
-                    style_step = style[0]
-
             if i > 0 and step > 0:
                 out_prev = out
                 
-            out = conv(out, style_step, noise[i])
+            # HACK
+            out = conv(out, styles[0], noise[i])
 
             if i == step:
                 out = to_rgb(out)
@@ -485,7 +474,8 @@ class StyledGenerator(nn.Module):
             input = [input]
 
         for i in input:
-            styles.append(self.style(i))
+            print(i.shape)
+            styles.append((self.style(i), self.style(-i)))
 
         batch = input[0].shape[0]
 
@@ -497,13 +487,12 @@ class StyledGenerator(nn.Module):
                 noise.append(torch.randn(batch, 1, size, size, device=input[0].device))
 
         if mean_style is not None:
-            styles_norm = []
+            def norm_style(style):
+                return mean_style + style_weight * (style - mean_style)
 
-            for style in styles:
-                styles_norm.append(mean_style + style_weight * (style - mean_style))
+            styles = [(norm_style(s[0]), norm_style(s[1])) for s in styles]
 
-            styles = styles_norm
-
+        # styles are now in tuple, styles is of shape (1, 15, 512)
         return self.generator(styles, noise, step, alpha, mixing_range=mixing_range)
 
     def mean_style(self, input):
@@ -580,7 +569,6 @@ class Discriminator(nn.Module):
                     out = (1 - alpha) * skip_rgb + alpha * out
 
         out = out.squeeze(2).squeeze(2)
-        # print(input.size(), out.size(), step)
         out = self.linear(out)
 
         return out
