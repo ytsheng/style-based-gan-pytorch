@@ -281,7 +281,7 @@ class AdaptiveInstanceNorm(nn.Module):
             style = self.style(style).unsqueeze(2).unsqueeze(3)
             gamma, beta = style.chunk(2, 1)
             return gamma, beta
-                
+
         def styles_to_gb(styles):
             g1, b1 = style_to_gb(styles[0])
             g2, b2 = style_to_gb(styles[1])
@@ -296,7 +296,7 @@ class AdaptiveInstanceNorm(nn.Module):
             b = torch.cat([repeat(b1), repeat(b2)], dim=-1)
             return g, b
 
-        gamma, beta = styles_to_gb(styles)
+        gamma, beta = style_to_gb(styles)
         out = gamma * out + beta
 
         return out
@@ -426,11 +426,30 @@ class Generator(nn.Module):
     # styles here is a tuple of (x, 15, 512) shaped tensor
     def forward(self, styles, noise, step=0, alpha=-1, mixing_range=(-1, -1)):
         out = noise[0]
+
+#        if len(style) < 2:
+#            inject_index = [len(self.progression) + 1]
+#        else:
+#            inject_index = random.sample(list(range(step)), len(style) - 1)
+#        crossover = 0
         for i, (conv, to_rgb) in enumerate(zip(self.progression, self.to_rgb)):
+#            if mixing_range == (-1, -1):
+#                if crossover < len(inject_index) and i > inject_index[crossover]:
+#                    crossover = min(crossover + 1, len(style))
+#
+#                style_step = style[crossover]
+#
+#            else:
+#                if mixing_range[0] <= i <= mixing_range[1]:
+#                    style_step = style[1]
+#
+#                else:
+#                    style_step = style[0]
+
             if i > 0 and step > 0:
                 out_prev = out
-                
-            # HACK
+
+            # HACK style_step
             out = conv(out, styles[0], noise[i])
 
             if i == step:
@@ -474,8 +493,7 @@ class StyledGenerator(nn.Module):
             input = [input]
 
         for i in input:
-            print(i.shape)
-            styles.append((self.style(i), self.style(-i)))
+            styles.append(self.style(i))
 
         batch = input[0].shape[0]
 
@@ -490,9 +508,8 @@ class StyledGenerator(nn.Module):
             def norm_style(style):
                 return mean_style + style_weight * (style - mean_style)
 
-            styles = [(norm_style(s[0]), norm_style(s[1])) for s in styles]
+            styles = [norm_style(s) for s in styles]
 
-        # styles are now in tuple, styles is of shape (1, 15, 512)
         return self.generator(styles, noise, step, alpha, mixing_range=mixing_range)
 
     def mean_style(self, input):
