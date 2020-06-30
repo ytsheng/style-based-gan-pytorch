@@ -376,15 +376,16 @@ class StyledConvBlock(nn.Module):
         self.lrelu2 = nn.LeakyReLU(0.2)
 
     def forward(self, input, styles, noise):
+        assert len(styles)==2
         out = self.conv1(input)
         out = self.noise1(out, noise)
         out = self.lrelu1(out)
-        out = self.adain1(out, styles)
+        out = self.adain1(out, styles[0])
 
         out = self.conv2(out)
         out = self.noise2(out, noise)
         out = self.lrelu2(out)
-        out = self.adain2(out, styles)
+        out = self.adain2(out, styles[1])
 
         return out
 
@@ -423,7 +424,6 @@ class Generator(nn.Module):
 
         # self.blur = Blur()
 
-    # styles here is a tuple of (x, 15, 512) shaped tensor
     def forward(self, styles, noise, step=0, alpha=-1, mixing_range=(-1, -1)):
         out = noise[0]
 
@@ -449,10 +449,10 @@ class Generator(nn.Module):
             if i > 0 and step > 0:
                 out_prev = out
 
-            # HACK style_step
-            out = conv(out, styles[0], noise[i])
+            # HACK style_step, pass in a tuple to be used in two conv
+            out = conv(out, (styles[i*2], styles[i*2+1]), noise[i])
 
-            if i == step:
+            if i == step - 2:
                 out = to_rgb(out)
 
                 if i > 0 and 0 <= alpha < 1:
@@ -477,43 +477,52 @@ class StyledGenerator(nn.Module):
             layers.append(nn.LeakyReLU(0.2))
 
         self.style = nn.Sequential(*layers)
-
+        
+    def truncation(self, mean_style, w_representation, style_weight=0):
+        if mean_style is not None:
+            return mean_style + style_weight * (w_representation - mean_style)
+        else:
+            return w_representation
+        
     def forward(
         self,
-        input,
+        latents,
         noise=None,
-        step=0,
+        num_layers=0,
         alpha=-1,
         mean_style=None,
         style_weight=0,
         mixing_range=(-1, -1),
+        latent_space_type='z'
     ):
+        assert latent_space_type == 'z' or latent_space_type == 'w' or latent_space_type == 'wp'
+        
         styles = []
-        if type(input) not in (list, tuple):
-            input = [input]
+#         if type(latents) not in (list, tuple):
+#             latents = [latents]
 
-        for i in input:
-            styles.append(self.style(i))
+        for i in latents:
+            if latent_space_type == 'z':
+                styles.append(self.style(i))
+            elif latent_space_type[0] == 'w':
+                styles.append(i)
 
-        batch = input[0].shape[0]
+        batch = latents.shape[0]
 
         if noise is None:
             noise = []
 
-            for i in range(step + 1):
+            for i in range(num_layers + 1):
                 size = 4 * 2 ** i
-                noise.append(torch.randn(batch, 1, size, size, device=input[0].device))
+                noise.append(torch.randn(batch, 1, size, size, device=latents.device))
+                
+        styles = [self.truncation(mean_style, s, style_weight) for s in styles]
+        styles = torch.transpose(torch.stack(styles, 0), 0, 1)
+        print(f"Styles in WP: {styles.shape}")
+        return self.generator(styles, noise, num_layers, alpha, mixing_range=mixing_range)
 
-        if mean_style is not None:
-            def norm_style(style):
-                return mean_style + style_weight * (style - mean_style)
-
-            styles = [norm_style(s) for s in styles]
-
-        return self.generator(styles, noise, step, alpha, mixing_range=mixing_range)
-
-    def mean_style(self, input):
-        style = self.style(input).mean(0, keepdim=True)
+    def mean_style(self, latents):
+        style = self.style(latents).mean(0, keepdim=True)
 
         return style
 

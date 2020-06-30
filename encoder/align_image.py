@@ -21,7 +21,7 @@ if __name__ == "__main__":
     python align_images.py /raw_images /aligned_images
     """
 
-    landmarks_model_path = unpack_bz2("/home/sash/stylegan/style-based-gan-pytorch/encoder/models/shape_predictor_68_face_landmarks.dat.bz2")
+    landmarks_model_path = unpack_bz2("/data/users/sash/stylegan/style-based-gan-pytorch/encoder/models/shape_predictor_68_face_landmarks.dat.bz2")
     RAW_IMAGES_DIR = sys.argv[1]
     ALIGNED_IMAGES_DIR = sys.argv[2]
 
@@ -32,5 +32,5 @@ if __name__ == "__main__":
         for i, face_landmarks in enumerate(landmarks_detector.get_landmarks(raw_img_path), start=1):
             face_img_name = '%s_%02d.png' % (os.path.splitext(img_name)[0], i)
             aligned_face_path = os.path.join(ALIGNED_IMAGES_DIR, face_img_name)
-            
+
             image_align(raw_img_path, aligned_face_path, face_landmarks)
