@@ -268,6 +268,7 @@ if __name__ == '__main__':
     parser.add_argument('--sched', action='store_true', help='use lr scheduling')
     parser.add_argument('--init_size', default=8, type=int, help='initial image size')
     parser.add_argument('--max_size', default=1024, type=int, help='max image size')
+    parser.add_argument('--crop_and_resize', default=False, type=bool, help='Specify whether or not we should crop and resize to 256')
     parser.add_argument(
         '--ckpt', default=None, type=str, help='load from previous checkpoints'
     )
@@ -321,6 +322,7 @@ if __name__ == '__main__':
 
     transform = transforms.Compose(
         [
+            transforms.Lambda(lambda img: crop_and_resize(img, 256, args.crop_and_resize)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
@@ -342,3 +344,15 @@ if __name__ == '__main__':
     args.batch_default = 32
 
     train(args, dataset, generator, discriminator)
+
+
+def crop_and_resize(img, size, should_crop_and_resize):
+    if not should_crop_and_resize:
+        return img
+    crop = np.min(img.shape[:2])
+    img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
+    img = PIL.Image.fromarray(img, 'RGB')
+    h, w = img.shape[:2]
+    if (h == size) and (w == size):
+        return img
+    return img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
