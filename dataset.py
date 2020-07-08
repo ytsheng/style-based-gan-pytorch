@@ -30,7 +30,7 @@ class MultiResolutionDataset(Dataset):
 
     def __getitem__(self, index):
         with self.env.begin(write=False) as txn:
-            _, img_bytes = [next(txn.cursor()) for _ in range(index)][0]:
+            _, img_bytes = [next(txn.cursor()) for _ in range(index)][0]
 
         buffer = BytesIO(img_bytes)
         img = Image.open(buffer)

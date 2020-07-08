@@ -5,6 +5,7 @@ import math
 from tqdm import tqdm
 import numpy as np
 from PIL import Image
+import time
 
 import torch
 from torch import nn, optim
@@ -43,7 +44,20 @@ def adjust_lr(optimizer, lr):
         group['lr'] = lr * mult
 
 
+def __crop_and_resize(img, size, should_crop_and_resize):
+    if not should_crop_and_resize:
+        return img
+    crop = np.min(img.size)
+    w, h = img.size
+    img = img.crop(((w - crop) // 2, (h - crop) // 2, (w + crop) // 2, (h + crop) // 2))
+    w, h = img.size
+    if (h == size) and (w == size):
+        return img
+    return img.resize((size, size), Image.ANTIALIAS)
+
+
 def train(args, dataset, generator, discriminator):
+
     step = int(math.log2(args.init_size)) - 2
     resolution = 4 * 2 ** step
     loader = sample_data(
@@ -68,7 +82,7 @@ def train(args, dataset, generator, discriminator):
 
     max_step = int(math.log2(args.max_size)) - 2
     final_progress = False
-
+    start = time.time()
     for i in pbar:
         discriminator.zero_grad()
 
@@ -118,6 +132,10 @@ def train(args, dataset, generator, discriminator):
             data_loader = iter(loader)
             real_image = next(data_loader)
 
+        # needed this since image folder dataset returns [tensor, label] format.
+        # we only care about tensor
+        real_image = real_image[0]
+        # real_image = real_image.contiguous()
         used_sample += real_image.shape[0]
 
         b_size = real_image.size(0)
@@ -248,6 +266,8 @@ def train(args, dataset, generator, discriminator):
         )
 
         pbar.set_description(state_msg)
+        end = time.time()
+        print(end - start)
 
 
 if __name__ == '__main__':
@@ -269,6 +289,7 @@ if __name__ == '__main__':
     parser.add_argument('--init_size', default=8, type=int, help='initial image size')
     parser.add_argument('--max_size', default=1024, type=int, help='max image size')
     parser.add_argument('--crop_and_resize', default=False, type=bool, help='Specify whether or not we should crop and resize to 256')
+    parser.add_argument('--local_image_folder_path', default="", type=str, help='Specify the local folder path from which to get training data')
     parser.add_argument(
         '--ckpt', default=None, type=str, help='load from previous checkpoints'
     )
@@ -320,16 +341,20 @@ if __name__ == '__main__':
         g_optimizer.load_state_dict(ckpt['g_optimizer'])
         d_optimizer.load_state_dict(ckpt['d_optimizer'])
 
+
     transform = transforms.Compose(
         [
-            transforms.Lambda(lambda img: crop_and_resize(img, 256, args.crop_and_resize)),
+            transforms.Lambda(lambda img: __crop_and_resize(img, 256, args.crop_and_resize)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
         ]
     )
 
-    dataset = MultiResolutionDataset(args.path, transform)
+    if len(args.local_image_folder_path) != 0:
+        dataset = datasets.ImageFolder(root=args.local_image_folder_path, transform=transform)
+    else:
+        dataset = MultiResolutionDataset(args.path, transform)
 
     if args.sched:
         args.lr = {128: 0.0015, 256: 0.002, 512: 0.003, 1024: 0.003}
@@ -341,18 +366,6 @@ if __name__ == '__main__':
 
     args.gen_sample = {512: (8, 4), 1024: (4, 2)}
 
-    args.batch_default = 32
+    args.batch_default = 8
 
     train(args, dataset, generator, discriminator)
-
-
-def crop_and_resize(img, size, should_crop_and_resize):
-    if not should_crop_and_resize:
-        return img
-    crop = np.min(img.shape[:2])
-    img = img[(img.shape[0] - crop) // 2 : (img.shape[0] + crop) // 2, (img.shape[1] - crop) // 2 : (img.shape[1] + crop) // 2]
-    img = PIL.Image.fromarray(img, 'RGB')
-    h, w = img.shape[:2]
-    if (h == size) and (w == size):
-        return img
-    return img.resize((resolution, resolution), PIL.Image.ANTIALIAS)
