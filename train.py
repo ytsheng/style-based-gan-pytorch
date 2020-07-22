@@ -14,7 +14,7 @@ from torch.autograd import Variable, grad
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils
 
-from dataset import MultiResolutionDataset
+from dataset import MultiResolutionDataset, CatDataset
 from model import StyledGenerator, Discriminator
 
 
@@ -288,8 +288,10 @@ if __name__ == '__main__':
     parser.add_argument('--sched', action='store_true', help='use lr scheduling')
     parser.add_argument('--init_size', default=8, type=int, help='initial image size')
     parser.add_argument('--max_size', default=1024, type=int, help='max image size')
+    # Added the below two arguments to enable cat stylegan training
     parser.add_argument('--crop_and_resize', default=False, type=bool, help='Specify whether or not we should crop and resize to 256')
-    parser.add_argument('--local_image_folder_path', default="", type=str, help='Specify the local folder path from which to get training data')
+    parser.add_argument("--categories", type=str, default=None, help="categories to filter the datasets to train on")
+
     parser.add_argument(
         '--ckpt', default=None, type=str, help='load from previous checkpoints'
     )
@@ -344,28 +346,26 @@ if __name__ == '__main__':
 
     transform = transforms.Compose(
         [
-            transforms.Lambda(lambda img: __crop_and_resize(img, 256, args.crop_and_resize)),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
             transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5), inplace=True),
         ]
     )
 
-    if len(args.local_image_folder_path) != 0:
-        dataset = datasets.ImageFolder(root=args.local_image_folder_path, transform=transform)
+    if len(args.categories) != 0:
+        dataset = CatDataset(path=args.path, categories=args.categories, transform=transform, resolution=args.init_size)
     else:
         dataset = MultiResolutionDataset(args.path, transform)
 
     if args.sched:
         args.lr = {128: 0.0015, 256: 0.002, 512: 0.003, 1024: 0.003}
         args.batch = {4: 512, 8: 256, 16: 128, 32: 64, 64: 32, 128: 32, 256: 32}
-
     else:
         args.lr = {}
         args.batch = {}
 
     args.gen_sample = {512: (8, 4), 1024: (4, 2)}
 
-    args.batch_default = 8
+    args.batch_default = 32
 
     train(args, dataset, generator, discriminator)
