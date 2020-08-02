@@ -119,7 +119,7 @@ def train(args, dataset, generator, discriminator):
                     'd_optimizer': d_optimizer.state_dict(),
                     'g_running': g_running.state_dict(),
                 },
-                f'checkpoint/train_step-{ckpt_step}.model',
+                f'{args.checkpoint_dir}/train_step-{ckpt_step}.model',
             )
 
             adjust_lr(g_optimizer, args.lr.get(resolution, 0.001))
@@ -132,10 +132,6 @@ def train(args, dataset, generator, discriminator):
             data_loader = iter(loader)
             real_image = next(data_loader)
 
-        # needed this since image folder dataset returns [tensor, label] format.
-        # we only care about tensor
-        real_image = real_image[0]
-        # real_image = real_image.contiguous()
         used_sample += real_image.shape[0]
 
         b_size = real_image.size(0)
@@ -249,7 +245,7 @@ def train(args, dataset, generator, discriminator):
 
             utils.save_image(
                 torch.cat(images, 0),
-                f'sample/{str(i + 1).zfill(6)}.png',
+                f'{args.sample_dir}/{str(i + 1).zfill(6)}.png',
                 nrow=gen_i,
                 normalize=True,
                 range=(-1, 1),
@@ -257,7 +253,7 @@ def train(args, dataset, generator, discriminator):
 
         if (i + 1) % 10000 == 0:
             torch.save(
-                g_running.state_dict(), f'checkpoint/{str(i + 1).zfill(6)}.model'
+                g_running.state_dict(), f'{args.checkpoint_dir}/{str(i + 1).zfill(6)}.model'
             )
 
         state_msg = (
@@ -288,9 +284,11 @@ if __name__ == '__main__':
     parser.add_argument('--sched', action='store_true', help='use lr scheduling')
     parser.add_argument('--init_size', default=8, type=int, help='initial image size')
     parser.add_argument('--max_size', default=1024, type=int, help='max image size')
-    # Added the below two arguments to enable cat stylegan training
+    # Added the below four arguments to enable cat stylegan training
     parser.add_argument('--crop_and_resize', default=False, type=bool, help='Specify whether or not we should crop and resize to 256')
     parser.add_argument("--categories", type=str, default=None, help="categories to filter the datasets to train on")
+    parser.add_argument("--checkpoint_dir", type=str, default=None, help="checkpoint_dir to allow storage for multiple models")
+    parser.add_argument("--sample_dir", type=str, default=None, help="sample_dir to allow storage for multiple model samples")
 
     parser.add_argument(
         '--ckpt', default=None, type=str, help='load from previous checkpoints'
@@ -366,6 +364,6 @@ if __name__ == '__main__':
 
     args.gen_sample = {512: (8, 4), 1024: (4, 2)}
 
-    args.batch_default = 32
+    args.batch_default = 64
 
     train(args, dataset, generator, discriminator)
