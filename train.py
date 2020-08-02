@@ -350,10 +350,12 @@ if __name__ == '__main__':
         ]
     )
 
-    if len(args.categories) != 0:
+    if args.categories is not None and len(args.categories) != 0:
         dataset = CatDataset(path=args.path, categories=args.categories, transform=transform, resolution=args.init_size)
     else:
-        dataset = MultiResolutionDataset(args.path, transform)
+        dataset = GenericDataset(path=args.path, transform=transform)
+        # Modified the dataset to use the images in a path
+        # dataset = MultiResolutionDataset(args.path, transform)
 
     if args.sched:
         args.lr = {128: 0.0015, 256: 0.002, 512: 0.003, 1024: 0.003}

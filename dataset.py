@@ -4,6 +4,7 @@ import lmdb
 from PIL import Image
 from torch.utils.data import Dataset
 import glob
+import os
 
 class MultiResolutionDataset(Dataset):
     def __init__(self, path, transform, resolution=8):
@@ -37,6 +38,22 @@ class MultiResolutionDataset(Dataset):
         img = self.transform(img)
 
         return img
+
+
+class GenericDataset(Dataset):
+    def __init__(self, path, transform):
+        self.path = path
+        self.keys = os.listdir(path)
+        self.transform = transform
+
+    def __getitem__(self, index):
+        key = self.keys[index]
+        img = Image.open(os.path.join(self.path, key))
+        img = self.transform(img)
+        return img
+
+    def __len__(self):
+        return len(self.keys)
 
 
 class CatDataset(Dataset):
