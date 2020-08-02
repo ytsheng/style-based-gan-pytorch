@@ -14,7 +14,7 @@ from torch.autograd import Variable, grad
 from torch.utils.data import DataLoader
 from torchvision import datasets, transforms, utils
 
-from dataset import MultiResolutionDataset, CatDataset
+from dataset import MultiResolutionDataset, CatDataset, GenericDataset
 from model import StyledGenerator, Discriminator
 
 
@@ -366,6 +366,6 @@ if __name__ == '__main__':
 
     args.gen_sample = {512: (8, 4), 1024: (4, 2)}
 
-    args.batch_default = 64
+    args.batch_default = 48
 
     train(args, dataset, generator, discriminator)
